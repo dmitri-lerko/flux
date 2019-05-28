@@ -35,6 +35,7 @@ repo is used by 1), and advanced only by 2).
 package chartsync
 
 import (
+	"errors"
 	"context"
 	"fmt"
 	"path/filepath"
@@ -82,6 +83,7 @@ type Clients struct {
 	KubeClient kubernetes.Clientset
 	IfClient   ifclientset.Clientset
 	FhrLister  iflister.HelmReleaseLister
+	FhrSynced  cache.InformerSynced
 }
 
 type Config struct {
@@ -118,6 +120,7 @@ type ChartChangeSync struct {
 	kubeClient   kubernetes.Clientset
 	ifClient     ifclientset.Clientset
 	fhrLister    iflister.HelmReleaseLister
+	fhrSynced    cache.InformerSynced
 	release      *release.Release
 	releaseQueue ReleaseQueue
 	config       Config
@@ -136,6 +139,7 @@ func New(logger log.Logger, clients Clients, release *release.Release, releaseQu
 		kubeClient:   clients.KubeClient,
 		ifClient:     clients.IfClient,
 		fhrLister:    clients.FhrLister,
+		fhrSynced:    clients.FhrSynced,
 		release:      release,
 		releaseQueue: releaseQueue,
 		config:       config.WithDefaults(),
@@ -149,7 +153,17 @@ func New(logger log.Logger, clients Clients, release *release.Release, releaseQu
 // Helm releases in the cluster, what HelmRelease declare, and
 // changes in the git repos mentioned by any HelmRelease.
 func (chs *ChartChangeSync) Run(stopCh <-chan struct{}, errc chan error, wg *sync.WaitGroup) {
-	chs.logger.Log("info", "starting git chart sync loop")
+	chs.logger.Log("info", "starting git chart sync")
+
+	// Wait for the caches to be synced before starting worker
+	chs.logger.Log("info", "waiting for informer caches to sync")
+	if ok := cache.WaitForCacheSync(stopCh, chs.fhrSynced); !ok {
+		errc <- errors.New("failed to wait for caches to sync")
+		return
+	}
+	chs.logger.Log("info", "informer caches synced")
+
+	chs.logger.Log("info", "starting worker")
 
 	wg.Add(1)
 	go func() {

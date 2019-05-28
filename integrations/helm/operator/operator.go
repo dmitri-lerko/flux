@@ -126,13 +126,13 @@ func (c *Controller) Run(threadiness int, stopCh <-chan struct{}, wg *sync.WaitG
 	defer c.releaseWorkqueue.ShutDown()
 
 	c.logger.Log("info", "starting operator")
+
 	// Wait for the caches to be synced before starting workers
 	c.logger.Log("info", "waiting for informer caches to sync")
-
 	if ok := cache.WaitForCacheSync(stopCh, c.fhrSynced); !ok {
 		return errors.New("failed to wait for caches to sync")
 	}
-	c.logger.Log("info", "unformer caches synced")
+	c.logger.Log("info", "informer caches synced")
 
 	c.logger.Log("info", "starting workers")
 	for i := 0; i < threadiness; i++ {
